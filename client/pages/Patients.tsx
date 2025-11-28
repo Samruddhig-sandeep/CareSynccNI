@@ -1,23 +1,10 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Plus, Eye, Trash2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Download, Eye, Trash2, Edit2, Calendar } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { cn } from "@/lib/utils";
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { supabase } from "@/lib/supabaseClient";
 
 interface HealthUpdate {
   date: string;
@@ -33,71 +20,94 @@ interface Patient {
   lastName: string;
   dateOfBirth?: string;
   gender?: "male" | "female" | "other";
-  diagnosisCount: number;
+  admitDate?: string;
+  email?: string;
+  phone?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+  address?: string;
   createdAt: string;
   healthUpdates?: HealthUpdate[];
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: "P001",
-    firstName: "John",
-    lastName: "Doe",
-    dateOfBirth: "1980-01-15",
-    gender: "male",
-    diagnosisCount: 2,
-    createdAt: "2024-01-01",
-    healthUpdates: [
-      { date: "2024-01-01", bloodPressure: "120/80", heartRate: 72, temperature: 98.6 },
-      { date: "2024-01-08", bloodPressure: "122/82", heartRate: 74, temperature: 98.7 },
-      { date: "2024-01-15", bloodPressure: "121/81", heartRate: 71, temperature: 98.5 },
-      { date: "2024-01-22", bloodPressure: "119/79", heartRate: 70, temperature: 98.6 },
-      { date: "2024-01-29", bloodPressure: "118/78", heartRate: 69, temperature: 98.4 },
-    ],
-  },
-  {
-    id: "P002",
-    firstName: "Sarah",
-    lastName: "Smith",
-    dateOfBirth: "1992-06-22",
-    gender: "female",
-    diagnosisCount: 1,
-    createdAt: "2024-01-05",
-    healthUpdates: [
-      { date: "2024-01-05", bloodPressure: "110/70", heartRate: 65, temperature: 98.2 },
-      { date: "2024-01-12", bloodPressure: "112/72", heartRate: 67, temperature: 98.3 },
-      { date: "2024-01-19", bloodPressure: "111/71", heartRate: 64, temperature: 98.2 },
-      { date: "2024-01-26", bloodPressure: "110/70", heartRate: 63, temperature: 98.1 },
-    ],
-  },
-  {
-    id: "P003",
-    firstName: "Michael",
-    lastName: "Johnson",
-    dateOfBirth: "1975-03-10",
-    gender: "male",
-    diagnosisCount: 3,
-    createdAt: "2024-01-08",
-    healthUpdates: [
-      { date: "2024-01-08", bloodPressure: "130/85", heartRate: 80, temperature: 99.1 },
-      { date: "2024-01-15", bloodPressure: "128/84", heartRate: 78, temperature: 98.9 },
-      { date: "2024-01-22", bloodPressure: "125/82", heartRate: 76, temperature: 98.7 },
-      { date: "2024-01-29", bloodPressure: "122/80", heartRate: 74, temperature: 98.6 },
-    ],
-  },
-];
+interface PatientRow {
+  id: string;
+  created_at: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string | null;
+  gender: "male" | "female" | "other" | null;
+  admit_date: string | null;
+  email: string | null;
+  phone: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  address: string | null;
+}
+
+function mapPatient(row: PatientRow): Patient {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    dateOfBirth: row.date_of_birth || undefined,
+    gender: row.gender || undefined,
+    admitDate: row.admit_date || undefined,
+    email: row.email || undefined,
+    phone: row.phone || undefined,
+    guardianName: row.guardian_name || undefined,
+    guardianPhone: row.guardian_phone || undefined,
+    address: row.address || undefined,
+    createdAt: row.created_at.slice(0, 19).replace("T", " "),
+    healthUpdates: [],
+  };
+}
 
 export default function Patients() {
-  const [patients, setPatients] = useState<Patient[]>(mockPatients);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedPatientGraph, setExpandedPatientGraph] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
     dateOfBirth: "",
-    gender: "male" as const,
+    gender: "male" as "male" | "female" | "other",
+    admitDate: "",
+    email: "",
+    phone: "",
+    guardianName: "",
+    guardianPhone: "",
+    address: "",
   });
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+      setLoading(true);
+      setError(null);
+
+      const { data, error } = await supabase
+        .from("patients")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Fetch error:", error);
+        setError("Failed to load patients");
+        setPatients([]);
+      } else if (data) {
+        setPatients((data as PatientRow[]).map(mapPatient));
+      }
+
+      setLoading(false);
+    };
+
+    fetchPatients();
+  }, []);
 
   const filteredPatients = patients.filter(
     (p) =>
@@ -105,395 +115,326 @@ export default function Patients() {
       p.lastName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreatePatient = (e: React.FormEvent) => {
+  const handleCreatePatient = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!formData.firstName || !formData.lastName) return;
 
-    const newPatient: Patient = {
-      id: `P${Date.now()}`,
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      dateOfBirth: formData.dateOfBirth,
-      gender: formData.gender,
-      diagnosisCount: 0,
-      createdAt: new Date().toISOString().split("T")[0],
-      healthUpdates: [],
-    };
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    setPatients([...patients, newPatient]);
-    setFormData({ firstName: "", lastName: "", dateOfBirth: "", gender: "male" });
+    if (userError || !user) {
+      console.error("No logged-in user", userError);
+      alert("You must be logged in to create a patient.");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("patients")
+      .insert({
+        user_id: user.id,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        date_of_birth: formData.dateOfBirth || null,
+        gender: formData.gender,
+        admit_date: formData.admitDate || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        guardian_name: formData.guardianName || null,
+        guardian_phone: formData.guardianPhone || null,
+        address: formData.address || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Insert error:", error);
+
+      if (error.message.includes("unique_patient_name_dob")) {
+        alert(
+          "A patient with the same first name, last name and date of birth already exists."
+        );
+        return;
+      }
+
+      if (error.message.includes("unique_patient_email")) {
+        alert("This email address is already used by another patient.");
+        return;
+      }
+
+      alert("Failed to create patient.");
+      return;
+    }
+
+    if (data) {
+      const newPatient = mapPatient(data as PatientRow);
+      setPatients((prev) => [newPatient, ...prev]);
+    }
+
+    setFormData({
+      firstName: "",
+      lastName: "",
+      dateOfBirth: "",
+      gender: "male",
+      admitDate: "",
+      email: "",
+      phone: "",
+      guardianName: "",
+      guardianPhone: "",
+      address: "",
+    });
+
     setShowForm(false);
   };
 
-  const handleDeletePatient = (id: string) => {
-    setPatients(patients.filter((p) => p.id !== id));
+  const handleDeletePatient = async (id: string) => {
+    const ok = window.confirm("Delete this patient and all their diagnoses?");
+    if (!ok) return;
+
+    const { error } = await supabase.from("patients").delete().eq("id", id);
+
+    if (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete patient.");
+      return;
+    }
+
+    setPatients((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const getHeartRateData = (updates: HealthUpdate[] = []) => {
-    return updates.map((u) => ({
-      date: u.date.slice(-5),
-      heartRate: u.heartRate,
-    }));
-  };
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p>Loading patients...</p>
+      </div>
+    );
+  }
 
-  const getTemperatureData = (updates: HealthUpdate[] = []) => {
-    return updates.map((u) => ({
-      date: u.date.slice(-5),
-      temperature: u.temperature,
-    }));
-  };
-
-  const getBloodPressureData = (updates: HealthUpdate[] = []) => {
-    return updates.map((u) => {
-      const [systolic] = u.bloodPressure.split("/").map(Number);
-      return {
-        date: u.date.slice(-5),
-        systolic,
-      };
-    });
-  };
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="flex flex-col gap-4">
-          <div>
-            <h1 className="text-3xl font-display font-bold mb-2">
-              Patient Management
-            </h1>
-            <p className="text-muted-foreground">
-              Create and manage patient records, attach diagnoses, and export FHIR
-              data
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              onClick={() => setShowForm(!showForm)}
-              className="gap-2"
-              variant={showForm ? "secondary" : "default"}
-            >
-              <Plus className="w-4 h-4" />
-              {showForm ? "Cancel" : "Create Patient"}
-            </Button>
-          </div>
-        </div>
-
-        {/* Create Form */}
-        {showForm && (
-          <div className="rounded-lg border border-border bg-card p-6 animate-slide-up">
-            <h2 className="text-lg font-semibold mb-4">New Patient</h2>
-            <form onSubmit={handleCreatePatient} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    First Name *
-                  </label>
-                  <Input
-                    placeholder="John"
-                    value={formData.firstName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, firstName: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Last Name *
-                  </label>
-                  <Input
-                    placeholder="Doe"
-                    value={formData.lastName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, lastName: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Date of Birth
-                  </label>
-                  <Input
-                    type="date"
-                    value={formData.dateOfBirth}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dateOfBirth: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Gender
-                  </label>
-                  <select
-                    value={formData.gender}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        gender: e.target.value as "male" | "female" | "other",
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-input bg-background"
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit">Create Patient</Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowForm(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Search */}
+    <div className="space-y-8 p-6">
+      <div className="flex flex-col gap-4">
         <div>
-          <Input
-            placeholder="Search by name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <p className="text-sm text-muted-foreground mt-2">
-            {filteredPatients.length} of {patients.length} patients
+          <h1 className="text-3xl font-display font-bold mb-2">
+            Patient Management
+          </h1>
+          <p className="text-muted-foreground">
+            Create and manage patient records. Add diagnoses from the patient
+            report view.
           </p>
         </div>
 
-        {/* Patients List */}
-        {filteredPatients.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-12 flex flex-col items-center justify-center text-center">
-            <p className="text-muted-foreground mb-4">
-              {searchQuery
-                ? "No patients found matching your search"
-                : "No patients created yet. Click 'Create Patient' to get started."}
-            </p>
-            {!searchQuery && (
-              <Button onClick={() => setShowForm(true)} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Create First Patient
+        <Button
+          onClick={() => setShowForm(!showForm)}
+          className="gap-2"
+          variant={showForm ? "secondary" : "default"}
+        >
+          <Plus className="w-4 h-4" />
+          {showForm ? "Cancel" : "Create Patient"}
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-lg font-semibold mb-4">New Patient</h2>
+
+          <form onSubmit={handleCreatePatient} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <InputField
+                label="First Name *"
+                value={formData.firstName}
+                onChange={(v) => setFormData({ ...formData, firstName: v })}
+              />
+              <InputField
+                label="Last Name *"
+                value={formData.lastName}
+                onChange={(v) => setFormData({ ...formData, lastName: v })}
+              />
+              <InputField
+                type="date"
+                label="Date of Birth"
+                value={formData.dateOfBirth}
+                onChange={(v) =>
+                  setFormData({ ...formData, dateOfBirth: v })
+                }
+              />
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">Gender</label>
+                <select
+                  value={formData.gender}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      gender: e.target.value as "male" | "female" | "other",
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background"
+                >
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <InputField
+                type="date"
+                label="Admit Date"
+                value={formData.admitDate}
+                onChange={(v) => setFormData({ ...formData, admitDate: v })}
+              />
+              <InputField
+                label="Email"
+                value={formData.email}
+                onChange={(v) => setFormData({ ...formData, email: v })}
+              />
+              <InputField
+                label="Phone"
+                value={formData.phone}
+                onChange={(v) => setFormData({ ...formData, phone: v })}
+              />
+              <InputField
+                label="Guardian Name"
+                value={formData.guardianName}
+                onChange={(v) =>
+                  setFormData({ ...formData, guardianName: v })
+                }
+              />
+              <InputField
+                label="Guardian Phone"
+                value={formData.guardianPhone}
+                onChange={(v) =>
+                  setFormData({ ...formData, guardianPhone: v })
+                }
+              />
+
+              <div className="md:col-span-2">
+                <label className="text-sm font-medium mb-1 block">
+                  Address
+                </label>
+                <textarea
+                  placeholder="Full address"
+                  className="w-full p-2 rounded-lg border border-input bg-background"
+                  rows={3}
+                  value={formData.address}
+                  onChange={(e) =>
+                    setFormData({ ...formData, address: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="submit">Create Patient</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowForm(false)}
+              >
+                Cancel
               </Button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredPatients.map((patient) => (
-              <div key={patient.id} className="space-y-3">
-                <div className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg">
-                        {patient.firstName} {patient.lastName}
-                      </h3>
-                      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mt-2">
-                        {patient.dateOfBirth && (
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {patient.dateOfBirth}
-                          </div>
-                        )}
-                        {patient.gender && (
-                          <span className="capitalize">{patient.gender}</span>
-                        )}
-                        <span>
-                          {patient.diagnosisCount}{" "}
-                          {patient.diagnosisCount === 1
-                            ? "diagnosis"
-                            : "diagnoses"}
-                        </span>
-                        <span>Created {patient.createdAt}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setExpandedPatientGraph(
-                            expandedPatientGraph === patient.id ? null : patient.id
-                          )
-                        }
-                      >
-                        {expandedPatientGraph === patient.id ? "Hide" : "Show"} Health Data
-                      </Button>
-                      <Link to={`/patients/${patient.id}`}>
-                        <Button variant="outline" size="sm" className="gap-2">
-                          <Eye className="w-4 h-4" />
-                          View
-                        </Button>
-                      </Link>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => {
-                          /* Edit functionality */
-                        }}
-                      >
-                        <Edit2 className="w-4 h-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 text-destructive hover:text-destructive"
-                        onClick={() => handleDeletePatient(patient.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div>
+        <Input
+          placeholder="Search by name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      {filteredPatients.length === 0 ? (
+        <div className="p-12 text-center text-muted-foreground">
+          No patients found.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredPatients.map((patient) => (
+            <div
+              key={patient.id}
+              className="rounded-lg border border-border bg-card p-4"
+            >
+              <div className="flex justify-between items-start gap-4">
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-lg">
+                    {patient.firstName} {patient.lastName}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {patient.dateOfBirth || "DOB not set"} ·{" "}
+                    {patient.gender || "Gender not set"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Admitted: {patient.admitDate || "N/A"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Created: {patient.createdAt}
+                  </p>
+                  {patient.phone && (
+                    <p className="text-xs text-muted-foreground">
+                      📞 {patient.phone}
+                    </p>
+                  )}
                 </div>
 
-                {/* Health Update Graphs */}
-                {expandedPatientGraph === patient.id && patient.healthUpdates && patient.healthUpdates.length > 0 && (
-                  <div className="space-y-4 p-4 rounded-lg border border-border bg-card/50 animate-slide-up">
-                    <h4 className="font-semibold mb-4">Health Update Trends</h4>
-                    
-                    {/* Heart Rate Graph */}
-                    <div className="space-y-2">
-                      <h5 className="text-sm font-medium">Heart Rate (bpm)</h5>
-                      <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={getHeartRateData(patient.healthUpdates)}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis dataKey="date" className="text-xs" />
-                            <YAxis className="text-xs" domain={[60, 85]} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "var(--background)",
-                                border: "1px solid var(--border)",
-                                borderRadius: "6px",
-                              }}
-                              labelStyle={{ color: "var(--foreground)" }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="heartRate"
-                              stroke="var(--primary)"
-                              strokeWidth={2}
-                              dot={{ fill: "var(--primary)", r: 4 }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+                <div className="flex gap-2">
+                  <Link to={`/patients/${patient.id}`}>
+                    <Button size="sm" variant="outline" className="gap-2">
+                      <Eye className="w-4 h-4" />
+                      View
+                    </Button>
+                  </Link>
 
-                    {/* Temperature Graph */}
-                    <div className="space-y-2">
-                      <h5 className="text-sm font-medium">Temperature (°F)</h5>
-                      <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={getTemperatureData(patient.healthUpdates)}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis dataKey="date" className="text-xs" />
-                            <YAxis className="text-xs" domain={[97, 100]} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "var(--background)",
-                                border: "1px solid var(--border)",
-                                borderRadius: "6px",
-                              }}
-                              labelStyle={{ color: "var(--foreground)" }}
-                            />
-                            <Area
-                              type="monotone"
-                              dataKey="temperature"
-                              fill="var(--secondary)"
-                              stroke="var(--secondary)"
-                              fillOpacity={0.3}
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* Blood Pressure Graph */}
-                    <div className="space-y-2">
-                      <h5 className="text-sm font-medium">Blood Pressure Systolic (mmHg)</h5>
-                      <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={getBloodPressureData(patient.healthUpdates)}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis dataKey="date" className="text-xs" />
-                            <YAxis className="text-xs" domain={[110, 135]} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "var(--background)",
-                                border: "1px solid var(--border)",
-                                borderRadius: "6px",
-                              }}
-                              labelStyle={{ color: "var(--foreground)" }}
-                            />
-                            <Bar dataKey="systolic" fill="var(--primary)" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive"
+                    onClick={() => handleDeletePatient(patient.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </Button>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-        {/* Stats */}
-        {patients.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-border pt-8">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                Total Patients
-              </p>
-              <p className="text-2xl font-bold">{patients.length}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                Total Diagnoses
-              </p>
-              <p className="text-2xl font-bold">
-                {patients.reduce((sum, p) => sum + p.diagnosisCount, 0)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                Avg Diagnoses
-              </p>
-              <p className="text-2xl font-bold">
-                {(
-                  patients.reduce((sum, p) => sum + p.diagnosisCount, 0) /
-                  patients.length
-                ).toFixed(1)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                This Month
-              </p>
-              <p className="text-2xl font-bold">
-                {
-                  patients.filter((p) =>
-                    p.createdAt.startsWith(
-                      new Date().toISOString().split("T")[0].slice(0, 7)
-                    )
-                  ).length
-                }
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
+function InputField({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-sm font-medium mb-1 block">{label}</label>
+      <Input
+        type={type}
+        value={value}
+        placeholder={label}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
   );
 }

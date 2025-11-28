@@ -1,176 +1,204 @@
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Download,
-  ArrowLeft,
-  Plus,
-  Trash2,
-  Calendar,
-  FileJson,
-} from "lucide-react";
-import { useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+import { ArrowLeft, Download, Plus, Trash2 } from "lucide-react";
 
-interface Diagnosis {
-  id: string;
-  namasteCode: string;
-  namasteDescription: string;
-  icd11Code: string;
-  icd11Description: string;
-  recordedDate: string;
-  notes?: string;
-}
-
-interface PatientDetailData {
+interface Patient {
   id: string;
   firstName: string;
   lastName: string;
   dateOfBirth?: string;
   gender?: "male" | "female" | "other";
-  diagnoses: Diagnosis[];
+  admitDate?: string;
+  email?: string;
+  phone?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+  address?: string;
   createdAt: string;
 }
 
-// Mock data - in real app would fetch from API
-const mockPatientData: Record<string, PatientDetailData> = {
-  P001: {
-    id: "P001",
-    firstName: "John",
-    lastName: "Doe",
-    dateOfBirth: "1980-01-15",
-    gender: "male",
-    diagnoses: [
-      {
-        id: "D1",
-        namasteCode: "AYR-001",
-        namasteDescription: "Vata Vyadhi (Wind Disorder)",
-        icd11Code: "BA25.1",
-        icd11Description: "Disorders of the nervous system and sense organs",
-        recordedDate: "2024-01-01",
-        notes: "Patient presents with symptoms of nerve disorder",
-      },
-      {
-        id: "D2",
-        namasteCode: "SID-045",
-        namasteDescription: "Pitta Roga (Pitta Disease)",
-        icd11Code: "DA90",
-        icd11Description: "Diabetes mellitus",
-        recordedDate: "2024-01-10",
-        notes: "Blood sugar levels elevated",
-      },
-    ],
-    createdAt: "2024-01-01",
-  },
-  P002: {
-    id: "P002",
-    firstName: "Sarah",
-    lastName: "Smith",
-    dateOfBirth: "1992-06-22",
-    gender: "female",
-    diagnoses: [
-      {
-        id: "D3",
-        namasteCode: "UNA-012",
-        namasteDescription: "Humoral Imbalance",
-        icd11Code: "QD82",
-        icd11Description: "Symptoms and signs",
-        recordedDate: "2024-01-05",
-      },
-    ],
-    createdAt: "2024-01-05",
-  },
-  P003: {
-    id: "P003",
-    firstName: "Michael",
-    lastName: "Johnson",
-    dateOfBirth: "1975-03-10",
-    gender: "male",
-    diagnoses: [
-      {
-        id: "D4",
-        namasteCode: "AYR-023",
-        namasteDescription: "Kapha Vyadhi (Phlegm Disorder)",
-        icd11Code: "DB20",
-        icd11Description: "Asthma",
-        recordedDate: "2024-01-08",
-      },
-      {
-        id: "D5",
-        namasteCode: "SID-089",
-        namasteDescription: "Iyya Pitta (Bodily Humours)",
-        icd11Code: "EA03",
-        icd11Description: "Hypertension",
-        recordedDate: "2024-01-12",
-      },
-      {
-        id: "D6",
-        namasteCode: "AYR-001",
-        namasteDescription: "Vata Vyadhi (Wind Disorder)",
-        icd11Code: "BA25.1",
-        icd11Description: "Disorders of the nervous system and sense organs",
-        recordedDate: "2024-01-15",
-      },
-    ],
-    createdAt: "2024-01-08",
-  },
-};
+interface PatientRow {
+  id: string;
+  created_at: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string | null;
+  gender: "male" | "female" | "other" | null;
+  admit_date: string | null;
+  email: string | null;
+  phone: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  address: string | null;
+}
+
+interface Diagnosis {
+  id: string;
+  namasteCode: string;
+  icd11Code: string;
+  symptoms?: string;
+  clinicalNotes?: string;
+  recordedAt: string;
+}
+
+interface DiagnosisRow {
+  id: string;
+  created_at: string;
+  patient_id: string;
+  namaste_code: string;
+  icd11_code: string;
+  symptoms: string | null;
+  clinical_notes: string | null;
+}
+
+function mapPatient(row: PatientRow): Patient {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    dateOfBirth: row.date_of_birth || undefined,
+    gender: row.gender || undefined,
+    admitDate: row.admit_date || undefined,
+    email: row.email || undefined,
+    phone: row.phone || undefined,
+    guardianName: row.guardian_name || undefined,
+    guardianPhone: row.guardian_phone || undefined,
+    address: row.address || undefined,
+    createdAt: row.created_at.slice(0, 19).replace("T", " "),
+  };
+}
+
+function mapDiagnosis(row: DiagnosisRow): Diagnosis {
+  return {
+    id: row.id,
+    namasteCode: row.namaste_code,
+    icd11Code: row.icd11_code,
+    symptoms: row.symptoms || undefined,
+    clinicalNotes: row.clinical_notes || undefined,
+    recordedAt: row.created_at.slice(0, 19).replace("T", " "),
+  };
+}
 
 export default function PatientDetail() {
   const { patientId } = useParams();
-  const navigate = useNavigate();
-  const patient = patientId ? mockPatientData[patientId] : null;
-
-  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>(
-    patient?.diagnoses || []
-  );
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+
   const [formData, setFormData] = useState({
     namasteCode: "",
     icd11Code: "",
-    notes: "",
+    symptoms: "",
+    clinicalNotes: "",
   });
 
-  if (!patient) {
-    return (
-      <div className="space-y-4">
-        <Link to="/patients">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Patients
-          </Button>
-        </Link>
-        <div className="rounded-lg border border-border bg-card p-12 text-center">
-          <p className="text-muted-foreground">Patient not found</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const load = async () => {
+      if (!patientId) return;
 
-  const handleAddDiagnosis = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.namasteCode || !formData.icd11Code) return;
+      setLoading(true);
 
-    const newDiagnosis: Diagnosis = {
-      id: `D${Date.now()}`,
-      namasteCode: formData.namasteCode,
-      namasteDescription: "Diagnosis", // Would fetch from real data
-      icd11Code: formData.icd11Code,
-      icd11Description: "ICD-11 Code", // Would fetch from real data
-      recordedDate: new Date().toISOString().split("T")[0],
-      notes: formData.notes,
+      const { data: patientData, error: patientError } = await supabase
+        .from("patients")
+        .select("*")
+        .eq("id", patientId)
+        .maybeSingle();
+
+      if (patientError) {
+        console.error("Patient load error:", patientError);
+        setPatient(null);
+        setLoading(false);
+        return;
+      }
+
+      if (patientData) {
+        setPatient(mapPatient(patientData as PatientRow));
+      } else {
+        setPatient(null);
+      }
+
+      const { data: diagData, error: diagError } = await supabase
+        .from("patient_diagnoses")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: true });
+
+      if (diagError) {
+        console.error("Diagnosis load error:", diagError);
+        setDiagnoses([]);
+      } else if (diagData) {
+        setDiagnoses((diagData as DiagnosisRow[]).map(mapDiagnosis));
+      }
+
+      setLoading(false);
     };
 
-    setDiagnoses([...diagnoses, newDiagnosis]);
-    setFormData({ namasteCode: "", icd11Code: "", notes: "" });
+    load();
+  }, [patientId]);
+
+  const handleAddDiagnosis = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patient || !formData.namasteCode || !formData.icd11Code) return;
+
+    const { data, error } = await supabase
+      .from("patient_diagnoses")
+      .insert({
+        patient_id: patient.id,
+        namaste_code: formData.namasteCode,
+        icd11_code: formData.icd11Code,
+        symptoms: formData.symptoms || null,
+        clinical_notes: formData.clinicalNotes || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Add diagnosis error:", error);
+      alert("Failed to add diagnosis.");
+      return;
+    }
+
+    if (data) {
+      const newDiag = mapDiagnosis(data as DiagnosisRow);
+      setDiagnoses((prev) => [...prev, newDiag]);
+    }
+
+    setFormData({
+      namasteCode: "",
+      icd11Code: "",
+      symptoms: "",
+      clinicalNotes: "",
+    });
     setShowForm(false);
   };
 
-  const handleDeleteDiagnosis = (id: string) => {
-    setDiagnoses(diagnoses.filter((d) => d.id !== id));
+  const handleDeleteDiagnosis = async (id: string) => {
+    const ok = window.confirm("Delete this diagnosis?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("patient_diagnoses")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Delete diagnosis error:", error);
+      alert("Failed to delete diagnosis.");
+      return;
+    }
+
+    setDiagnoses((prev) => prev.filter((d) => d.id !== id));
   };
 
   const exportFHIR = () => {
-    const fhirBundle = {
+    if (!patient) return;
+
+    const bundle = {
       resourceType: "Bundle",
       type: "document",
       timestamp: new Date().toISOString(),
@@ -188,307 +216,257 @@ export default function PatientDetail() {
             ],
             birthDate: patient.dateOfBirth,
             gender: patient.gender,
+            telecom: [
+              patient.email ? { system: "email", value: patient.email } : null,
+              patient.phone ? { system: "phone", value: patient.phone } : null,
+            ].filter(Boolean),
+            address: patient.address
+              ? [
+                  {
+                    text: patient.address,
+                  },
+                ]
+              : undefined,
           },
         },
-        ...diagnoses.map((diagnosis) => ({
+        ...diagnoses.map((d) => ({
           resource: {
             resourceType: "Condition",
-            id: diagnosis.id,
+            id: d.id,
             code: {
               coding: [
                 {
                   system: "http://id.who.int/icd/release/11/mms",
-                  code: diagnosis.icd11Code,
-                  display: diagnosis.icd11Description,
+                  code: d.icd11Code,
                 },
               ],
             },
             subject: {
               reference: `Patient/${patient.id}`,
             },
-            recordedDate: diagnosis.recordedDate,
-            note: diagnosis.notes
-              ? [{ text: diagnosis.notes }]
-              : undefined,
+            recordedDate: d.recordedAt,
+            note: [
+              ...(d.symptoms ? [{ text: `Symptoms: ${d.symptoms}` }] : []),
+              ...(d.clinicalNotes ? [{ text: d.clinicalNotes }] : []),
+            ],
           },
         })),
       ],
     };
 
-    const dataStr = JSON.stringify(fhirBundle, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `patient-${patient.id}-fhir.json`;
-    link.click();
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `patient-${patient.id}-fhir.json`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!patient) {
+    return (
+      <div className="p-6 space-y-4">
+        <Link to="/patients">
+          <Button variant="outline" className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Patients
+          </Button>
+        </Link>
+        <p className="text-center text-muted-foreground">Patient not found.</p>
+      </div>
+    );
+  }
+
   return (
-    <>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Link to="/patients" className="text-sm text-primary hover:underline mb-2 inline-block">
-              ← Back to Patients
-            </Link>
-            <h1 className="text-3xl font-display font-bold mb-2">
-              {patient.firstName} {patient.lastName}
-            </h1>
-            <p className="text-muted-foreground">
-              Patient ID: {patient.id}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={exportFHIR} className="gap-2">
-              <Download className="w-4 h-4" />
-              Export FHIR JSON
-            </Button>
-          </div>
+    <div className="space-y-8 p-6">
+      <div className="flex justify-between items-start gap-4">
+        <div>
+          <Link to="/patients" className="text-primary text-sm">
+            ← Back to Patients
+          </Link>
+          <h1 className="text-3xl font-bold mt-2">
+            {patient.firstName} {patient.lastName}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            ID: {patient.id}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Created: {patient.createdAt}
+          </p>
         </div>
 
-        {/* Patient Info */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {patient.dateOfBirth && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                Date of Birth
-              </p>
-              <p className="text-lg font-semibold">{patient.dateOfBirth}</p>
-            </div>
-          )}
-          {patient.gender && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-                Gender
-              </p>
-              <p className="text-lg font-semibold capitalize">
-                {patient.gender}
-              </p>
-            </div>
-          )}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-              Total Diagnoses
-            </p>
-            <p className="text-lg font-semibold">{diagnoses.length}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-              Created
-            </p>
-            <p className="text-lg font-semibold">{patient.createdAt}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-              Last Updated
-            </p>
-            <p className="text-lg font-semibold">
-              {diagnoses.length > 0
-                ? diagnoses[diagnoses.length - 1].recordedDate
-                : patient.createdAt}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">
-              Status
-            </p>
-            <p className="text-lg font-semibold text-green-600">Active</p>
-          </div>
+        <Button className="gap-2" onClick={exportFHIR}>
+          <Download className="w-4 h-4" />
+          Export FHIR JSON
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <DetailCard label="Date of Birth" value={patient.dateOfBirth} />
+        <DetailCard label="Gender" value={patient.gender} />
+        <DetailCard label="Admit Date" value={patient.admitDate} />
+        <DetailCard label="Email" value={patient.email} />
+        <DetailCard label="Phone" value={patient.phone} />
+        <DetailCard label="Guardian Name" value={patient.guardianName} />
+        <DetailCard label="Guardian Phone" value={patient.guardianPhone} />
+
+        <div className="rounded-lg border border-border p-4 md:col-span-3">
+          <p className="text-xs text-muted-foreground font-semibold uppercase mb-1">
+            Address
+          </p>
+          <p className="text-lg">{patient.address || "—"}</p>
+        </div>
+      </div>
+
+      <div className="space-y-4 border-t border-border pt-8">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Diagnoses</h2>
+          <Button
+            size="sm"
+            variant={showForm ? "secondary" : "default"}
+            onClick={() => setShowForm((v) => !v)}
+            className="gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            {showForm ? "Cancel" : "Add Diagnosis"}
+          </Button>
         </div>
 
-        {/* Diagnoses Section */}
-        <div className="space-y-4 border-t border-border pt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-display font-bold">Diagnoses</h2>
-            <Button
-              onClick={() => setShowForm(!showForm)}
-              className="gap-2"
-              size="sm"
-              variant={showForm ? "secondary" : "default"}
-            >
-              <Plus className="w-4 h-4" />
-              {showForm ? "Cancel" : "Add Diagnosis"}
-            </Button>
+        {showForm && (
+          <div className="rounded-lg border border-border p-4">
+            <form onSubmit={handleAddDiagnosis} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField
+                  label="Namaste Code *"
+                  value={formData.namasteCode}
+                  onChange={(v) =>
+                    setFormData({ ...formData, namasteCode: v })
+                  }
+                />
+                <InputField
+                  label="ICD-11 Code *"
+                  value={formData.icd11Code}
+                  onChange={(v) =>
+                    setFormData({ ...formData, icd11Code: v })
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="text-sm mb-1 block">Symptoms</label>
+                <textarea
+                  className="w-full border rounded p-2 text-sm"
+                  rows={2}
+                  value={formData.symptoms}
+                  onChange={(e) =>
+                    setFormData({ ...formData, symptoms: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="text-sm mb-1 block">Clinical Notes</label>
+                <textarea
+                  className="w-full border rounded p-2 text-sm"
+                  rows={3}
+                  value={formData.clinicalNotes}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      clinicalNotes: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <Button type="submit">Add Diagnosis</Button>
+            </form>
           </div>
+        )}
 
-          {/* Add Diagnosis Form */}
-          {showForm && (
-            <div className="rounded-lg border border-border bg-card p-6 animate-slide-up">
-              <h3 className="font-semibold mb-4">New Diagnosis</h3>
-              <form onSubmit={handleAddDiagnosis} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">
-                      NAMASTE Code *
-                    </label>
-                    <Input
-                      placeholder="e.g., AYR-001"
-                      value={formData.namasteCode}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          namasteCode: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">
-                      ICD-11 Code *
-                    </label>
-                    <Input
-                      placeholder="e.g., BA25.1"
-                      value={formData.icd11Code}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          icd11Code: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
+        {diagnoses.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No diagnoses recorded yet.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {diagnoses.map((d) => (
+              <div
+                key={d.id}
+                className="rounded-lg border border-border p-4 flex justify-between gap-4"
+              >
+                <div className="space-y-1">
+                  <p className="font-semibold">
+                    {d.namasteCode} → {d.icd11Code}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Recorded: {d.recordedAt}
+                  </p>
+                  {d.symptoms && (
+                    <p className="text-sm">
+                      <span className="font-semibold">Symptoms: </span>
+                      {d.symptoms}
+                    </p>
+                  )}
+                  {d.clinicalNotes && (
+                    <p className="text-sm">
+                      <span className="font-semibold">Notes: </span>
+                      {d.clinicalNotes}
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Clinical Notes
-                  </label>
-                  <textarea
-                    placeholder="Optional notes about this diagnosis..."
-                    value={formData.notes}
-                    onChange={(e) =>
-                      setFormData({ ...formData, notes: e.target.value })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm"
-                    rows={3}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit">Add Diagnosis</Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowForm(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* Diagnoses List */}
-          {diagnoses.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-              <p className="text-muted-foreground mb-4">
-                No diagnoses recorded yet
-              </p>
-              <Button onClick={() => setShowForm(true)} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Add First Diagnosis
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {diagnoses.map((diagnosis) => (
-                <div
-                  key={diagnosis.id}
-                  className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors"
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => handleDeleteDiagnosis(d.id)}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <h4 className="text-sm font-semibold text-muted-foreground uppercase mb-1">
-                            NAMASTE Code
-                          </h4>
-                          <p className="font-bold text-lg">
-                            {diagnosis.namasteCode}
-                          </p>
-                          <p className="text-sm text-foreground">
-                            {diagnosis.namasteDescription}
-                          </p>
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-semibold text-muted-foreground uppercase mb-1">
-                            ICD-11 Code
-                          </h4>
-                          <p className="font-bold text-lg">
-                            {diagnosis.icd11Code}
-                          </p>
-                          <p className="text-sm text-foreground">
-                            {diagnosis.icd11Description}
-                          </p>
-                        </div>
-                      </div>
-
-                      {diagnosis.notes && (
-                        <div className="mt-3 pt-3 border-t border-border">
-                          <h4 className="text-sm font-semibold text-muted-foreground uppercase mb-1">
-                            Notes
-                          </h4>
-                          <p className="text-sm">{diagnosis.notes}</p>
-                        </div>
-                      )}
-
-                      <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                        <Calendar className="w-3 h-3" />
-                        {diagnosis.recordedDate}
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive shrink-0"
-                      onClick={() => handleDeleteDiagnosis(diagnosis.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* History/Timeline */}
-        {diagnoses.length > 0 && (
-          <div className="space-y-4 border-t border-border pt-8">
-            <h2 className="text-2xl font-display font-bold">History</h2>
-            <div className="space-y-3">
-              {[...diagnoses]
-                .sort(
-                  (a, b) =>
-                    new Date(b.recordedDate).getTime() -
-                    new Date(a.recordedDate).getTime()
-                )
-                .map((diagnosis, idx) => (
-                  <div
-                    key={diagnosis.id}
-                    className="flex items-start gap-4 p-4 rounded-lg border border-border"
-                  >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-semibold shrink-0">
-                      {diagnoses.length - idx}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-semibold">
-                        {diagnosis.namasteCode} → {diagnosis.icd11Code}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {diagnosis.namasteDescription}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {diagnosis.recordedDate}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-            </div>
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </Button>
+              </div>
+            ))}
           </div>
         )}
       </div>
-    </>
+    </div>
+  );
+}
+
+function DetailCard({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <p className="text-xs text-muted-foreground font-semibold uppercase mb-1">
+        {label}
+      </p>
+      <p className="text-lg">{value || "—"}</p>
+    </div>
+  );
+}
+
+function InputField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-sm mb-1 block">{label}</label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
   );
 }
