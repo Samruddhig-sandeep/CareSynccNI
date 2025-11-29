@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, X, Send } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+/* ---------------- MESSAGE TYPE ---------------- */
 interface Message {
   id: string;
   text: string;
@@ -12,94 +12,60 @@ interface Message {
   timestamp: Date;
 }
 
-const symptomDiseases: Record<string, string[]> = {
-  fever: [
-    "Based on fever symptoms, possible traditional medicine diagnoses could include: Pitta Dosha Imbalance (excess digestive fire), Ama Accumulation (toxin buildup), or Vata-Pitta Imbalance.",
-    "Fever may indicate: Fever/Infection (ICD-11: CA90.0), Influenza (ICD-11: CA50.1), or Common Cold (ICD-11: CA15.8). Please consult with a healthcare provider for proper diagnosis.",
-  ],
-  cough: [
-    "A cough could suggest: Kapha Dosha Imbalance in Ayurveda, affecting the respiratory system. May correspond to ICD-11 codes like Acute Bronchitis (DA90.0) or Upper Respiratory Infection (DA80.3).",
-    "Persistent cough may indicate: Cough (ICD-11: MD06.1), Bronchitis (ICD-11: DA90), or Asthma (ICD-11: DA95). Seek medical advice for proper evaluation.",
-  ],
-  headache: [
-    "Headache in traditional medicine often indicates: Vata Dosha disturbance, Pitta aggravation, or blocked channels. In modern medicine: Migraine (ICD-11: 8A81.0) or Tension Headache (ICD-11: 8A80.0).",
-    "Consider: Sinusitis (ICD-11: DA92), Cluster Headache (ICD-11: 8A82.0), or other primary headache disorders. Professional medical evaluation is recommended.",
-  ],
-  fatigue: [
-    "Fatigue may suggest: Vata Dosha imbalance, Kapha excess, or Ama accumulation causing weakness. Modern equivalent: Fatigue/Asthenia (ICD-11: MG30.0) or Anemia (ICD-11: BA00-BA99).",
-    "Could indicate: General Fatigue (ICD-11: MG30.0), Chronic Fatigue Syndrome (ICD-11: 8E49.1), or Anemia. Consult healthcare provider for proper diagnosis and treatment.",
-  ],
-  pain: [
-    "Pain symptoms suggest multiple possibilities: Vata Dosha aggravation, Pitta imbalance, or blocked energy channels in traditional medicine. ICD-11: Pain (MG30.0) or condition-specific pain codes.",
-    "Pain could indicate: Acute Pain (ICD-11: MG30.01), Chronic Pain (ICD-11: MG30.02), or specific condition pain. Proper evaluation needed for accurate diagnosis.",
-  ],
-  nausea: [
-    "Nausea often indicates: Pitta Dosha aggravation, Kapha excess, or digestive issues. ICD-11 equivalent: Nausea/Vomiting (DA90.2) or Gastroenteritis (DA93.9).",
-    "Could be: Gastric disorder (ICD-11: DA92), Hepatic condition, or medication side effect. Professional medical evaluation is important.",
-  ],
-  dizziness: [
-    "Dizziness may suggest: Vata Dosha imbalance, low blood circulation, or inner ear issues. ICD-11: Vertigo (8A84.0) or Dizziness (8A84.1).",
-    "Could indicate: Vestibular disorder (ICD-11: AB85-AB87), Low Blood Pressure (ICD-11: BA00.1), or Anemia. Consult healthcare provider for proper diagnosis.",
-  ],
-  default: [
-    "How can I help you today?",
-    "I'm here to assist you with Care Sync. What would you like to know?",
-    "Feel free to ask me about patients, code mapping, or any other features.",
-  ],
-  patient: [
-    "You can create a new patient by clicking the 'Create Patient' button on the Patients page.",
-    "Patients can have multiple diagnoses attached to them. Each diagnosis is mapped to an ICD-11 code.",
-    "You can view detailed patient information by clicking the 'View' button on any patient record.",
-  ],
-  mapping: [
-    "Code mapping allows you to map NAMASTE codes to ICD-11 codes.",
-    "Each mapping has a confidence score that indicates how accurate the mapping is.",
-    "You can search for codes using the search bar with code numbers or descriptions.",
-  ],
-  export: [
-    "You can export patient data in FHIR JSON format from the patient details page.",
-    "FHIR export includes all patient information and diagnoses in the standardized format.",
-    "The exported file can be used with other FHIR-compatible systems.",
-  ],
-  admin: [
-    "The admin dashboard allows you to manage codes, mappings, and users.",
-    "You can upload new NAMASTE code lists and view mapping coverage statistics.",
-    "User management includes creating accounts and managing user roles.",
-  ],
+/* ---------------- STATIC RESPONSES ---------------- */
+const staticResponses: Record<string, string> = {
+  "hi": "Hello! How can I assist you today?",
+  "hello": "Hello! How can I help you with NAMASTE codes or ICD-11?",
+  "hey": "Hey! What medical or mapping query can I answer?",
+  "bye": "Goodbye! Let me know anytime if you need help again.",
+  "thanks": "You’re welcome! 😊",
+  "thank you": "Happy to help! 🙌",
+
+  // NAMASTE / ICD-11 related
+  "what is namaste": "NAMASTE is an Indian traditional medicine coding system for Ayurveda, Siddha, and Unani diagnoses.",
+  "namaste code": "NAMASTE codes are traditional medicine diagnosis codes used in India. Tell me your condition, and I’ll try to find its mapping.",
+  "icd11": "ICD-11 is WHO’s international classification for diseases. I can help map NAMASTE → ICD-11.",
+  "map namaste to icd11": "Tell me the NAMASTE code or symptom, and I’ll show you the ICD-11 mapping.",
 };
 
-function getRandomResponse(keyword: string): string {
-  const lowerKeyword = keyword.toLowerCase();
-  let responseList = symptomDiseases.default;
+/* ------ Dynamic rule-based static mapping ------ */
+function generateStaticReply(input: string) {
+  const text = input.toLowerCase().trim();
 
-  // Check for symptom keywords
-  if (lowerKeyword.includes("fever")) {
-    responseList = symptomDiseases.fever;
-  } else if (lowerKeyword.includes("cough")) {
-    responseList = symptomDiseases.cough;
-  } else if (lowerKeyword.includes("headache") || lowerKeyword.includes("head ache")) {
-    responseList = symptomDiseases.headache;
-  } else if (lowerKeyword.includes("fatigue") || lowerKeyword.includes("tired")) {
-    responseList = symptomDiseases.fatigue;
-  } else if (lowerKeyword.includes("pain")) {
-    responseList = symptomDiseases.pain;
-  } else if (lowerKeyword.includes("nausea")) {
-    responseList = symptomDiseases.nausea;
-  } else if (lowerKeyword.includes("dizzy") || lowerKeyword.includes("dizziness")) {
-    responseList = symptomDiseases.dizziness;
-  } else if (lowerKeyword.includes("patient")) {
-    responseList = symptomDiseases.patient;
-  } else if (lowerKeyword.includes("mapping") || lowerKeyword.includes("map")) {
-    responseList = symptomDiseases.mapping;
-  } else if (lowerKeyword.includes("export") || lowerKeyword.includes("download")) {
-    responseList = symptomDiseases.export;
-  } else if (lowerKeyword.includes("admin")) {
-    responseList = symptomDiseases.admin;
-  }
+  // exact keyword match
+  if (staticResponses[text]) return staticResponses[text];
 
-  return responseList[Math.floor(Math.random() * responseList.length)];
+  // simple symptom-based responses
+  if (text.includes("fever"))
+    return "Fever usually maps to ICD-11 code: MG40. NAMASTE code depends on the system (Ayurveda/Siddha/Unani).";
+
+  if (text.includes("cough"))
+    return "Cough corresponds to ICD-11 code: CA23. NAMASTE mapping varies per traditional medicine category.";
+
+  if (text.includes("cold"))
+    return "Common cold generally maps to ICD-11: RA01. You can specify Ayurveda/Siddha/Unani for NAMASTE code.";
+
+  if (text.includes("headache"))
+    return "Headache maps to ICD-11: 8A80. In NAMASTE Ayurveda, it may relate to 'Shiroroga' categories.";
+
+  if (text.includes("pain"))
+    return "Pain-related conditions have many ICD-11 mappings (e.g., chronic pain: MG30). Provide a location for accuracy.";
+
+  // NAMASTE → ICD suggestions
+  if (text.includes("ayurveda"))
+    return "Ayurveda NAMASTE codes include disorders like 'Vata Vyadhi', 'Pitta Vyadhi'. Tell me a specific condition.";
+
+  if (text.includes("siddha"))
+    return "Siddha NAMASTE diagnoses include Vadham, Pittam, Silethumam, etc. Tell me a condition to map.";
+
+  if (text.includes("unani"))
+    return "Unani diagnoses include Balgham, Dam, Safra, and Sawda imbalances. Provide a condition for mapping.";
+
+  // default fallback
+  return "I didn’t fully understand that, but I can help with NAMASTE codes, ICD-11 mapping, symptoms, or medical classification. Try asking about a condition or code!";
 }
 
+/* ---------------------- CHATBOT COMPONENT ---------------------- */
 export function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -122,8 +88,9 @@ export function Chatbot() {
     scrollToBottom();
   }, [messages]);
 
+  /* ---------------------- HANDLE SEND ---------------------- */
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -133,20 +100,25 @@ export function Chatbot() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+
+    const userInput = inputValue;
     setInputValue("");
     setIsLoading(true);
 
-    // Simulate bot response delay
+    // STATIC bot reply
+    const reply = generateStaticReply(userInput);
+
+    const botMessage: Message = {
+      id: `msg-${Date.now()}-bot`,
+      text: reply,
+      sender: "bot",
+      timestamp: new Date(),
+    };
+
     setTimeout(() => {
-      const botMessage: Message = {
-        id: `msg-${Date.now()}-bot`,
-        text: getRandomResponse(inputValue),
-        sender: "bot",
-        timestamp: new Date(),
-      };
       setMessages((prev) => [...prev, botMessage]);
       setIsLoading(false);
-    }, 500);
+    }, 600);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -156,6 +128,7 @@ export function Chatbot() {
     }
   };
 
+  /* ---------------------- UI ---------------------- */
   if (!isOpen) {
     return (
       <button
@@ -170,6 +143,7 @@ export function Chatbot() {
 
   return (
     <div className="fixed bottom-6 right-6 w-96 h-[600px] flex flex-col rounded-lg shadow-xl border border-border bg-background z-50 animate-slide-up">
+      
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border bg-primary text-white rounded-t-lg">
         <h3 className="font-semibold">Care Sync Assistant</h3>
@@ -181,7 +155,7 @@ export function Chatbot() {
         </button>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
           <div
@@ -203,6 +177,7 @@ export function Chatbot() {
             </div>
           </div>
         ))}
+
         {isLoading && (
           <div className="flex gap-2">
             <div className="bg-muted text-foreground px-4 py-2 rounded-lg rounded-bl-none text-sm">
@@ -220,10 +195,11 @@ export function Chatbot() {
             </div>
           </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
+      {/* Input */}
       <div className="p-4 border-t border-border space-y-2">
         <div className="flex gap-2">
           <Input
@@ -243,8 +219,9 @@ export function Chatbot() {
             <Send className="w-4 h-4" />
           </Button>
         </div>
+
         <p className="text-xs text-muted-foreground">
-          Ask me about patients, code mapping, exports, or admin features!
+          Ask me anything about NAMASTE codes, ICD-11, symptoms or mappings!
         </p>
       </div>
     </div>

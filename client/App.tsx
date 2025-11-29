@@ -12,7 +12,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { useAuth } from "@/contexts/AuthContext";
-
+import { Chatbot } from "./components/Chatbot";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Index from "./pages/Index";
@@ -122,3 +122,12 @@ const AppWithProviders = () => (
 );
 
 createRoot(document.getElementById("root")!).render(<AppWithProviders />);
+
+function App() {
+  return (
+    <>
+      {/* Your app UI */}
+      <Chatbot />
+    </>
+  );
+}
